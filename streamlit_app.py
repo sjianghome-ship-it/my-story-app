@@ -1,0 +1,176 @@
+import streamlit as st
+import requests
+import time
+import random
+import os
+
+# -----------------------------------------------------------------
+# 核心配置：API URL
+# -----------------------------------------------------------------
+# 🚨 替换为您在 Colab 单元格 #3 中获得的实际公共 URL！
+# 示例: https://abc123xyz.try.colab.app
+COLAB_API_BASE_URL = "https://5000-m-s-kkb-use1d2-10pmp2v7ql8g5-d.us-east1-2.sandbox.colab.dev" 
+API_ENDPOINT = COLAB_API_BASE_URL + "/generate_script" 
+
+
+# -----------------------------------------------------------------
+# 核心数据结构：主题配置 (精简版，带俏皮开场)
+# -----------------------------------------------------------------
+THEMES = {
+    "请选择一个主题": {"role": "欢迎！", "starter": "请选择一个您想聊的故事主题。", "icon": "👋"},
+    "职场": {
+        "role": "资深职场陪酒师",
+        "starter": "今天想**吐槽**点啥？是领导又出奇葩招了，还是同事又把锅甩过来了？咱们得喝点儿，好好唠唠！",
+        "icon": "💼"
+    },
+    "生活": {
+        "role": "邻家故事酿造师",
+        "starter": "嘿，今天遇到啥**事儿**了，赶紧倒一杯！是开心到想转圈，还是难受到想找地儿躲？咱们得喝点儿聊聊！",
+        "icon": "☕"
+    }
+}
+
+# -----------------------------------------------------------------
+# 核心函数：调用 Colab 后端 API
+# -----------------------------------------------------------------
+def call_colab_api(chat_messages):
+    """将聊天记录发送到 Colab 后端 API，并接收 JSON 响应。"""
+    
+    # 格式化聊天记录为后端需要的列表 ["角色: 内容", ...]
+    formatted_history = [f"{msg['role']}: {msg['content']}" 
+                         for msg in chat_messages 
+                         if msg['role'] in ('user', 'assistant')]
+    
+    payload = {
+        "chat_history": formatted_history
+    }
+    
+    try:
+        # 设置 CORS 头部以便 Streamlit Cloud 访问
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(API_ENDPOINT, json=payload, headers=headers, timeout=60) 
+        response.raise_for_status() # 检查 HTTP 错误 (4xx 或 5xx)
+        return response.json()
+    
+    except requests.exceptions.RequestException as e:
+        return {"success": False, "error": f"API 通信错误: {e}"}
+
+# -----------------------------------------------------------------
+# MOCK 函数：生成随机启发式问题
+# -----------------------------------------------------------------
+def generate_mock_question(theme):
+    """根据主题随机生成一个俏皮的启发式问题。"""
+    work_questions = [
+        "咱们吐槽得再具体一点！这件事里，最让你‘想翻白眼’的细节是什么？",
+        "听起来太糟了！有没有一瞬间，你真想拍桌子走人？是什么让你忍住了？",
+        "这事儿对你最大的影响是什么？换句话说，你学到了哪个血泪教训？",
+        "你觉得如果用一个表情包来形容你当时的心情，会是哪个？描述一下！"
+    ]
+    life_questions = [
+        "这事儿背后，最让你感到温暖或最让你感到遗憾的细节是什么？",
+        "这完全可以拍成电影了！如果给这个故事起个副标题，会是什么？",
+        "这事儿改变了你对某件事的看法吗？请告诉我，你现在‘醒悟’了什么？",
+        "说实话，当时你有想找人炫耀或倾诉吗？他们是怎么回复你的？"
+    ]
+    
+    if theme == "职场":
+        return random.choice(work_questions)
+    elif theme == "生活":
+        return random.choice(life_questions)
+    else:
+        return "继续讲，我很感兴趣！"
+
+
+# -----------------------------------------------------------------
+# Streamlit UI 配置和流程
+# -----------------------------------------------------------------
+st.set_page_config(page_title="故事酿造机", layout="centered")
+st.title("🎙️ 故事酿造机：你有故事，我有酒")
+st.caption("通过启发式聊天，将经历转化为爆款短文/段子。")
+
+# --- 侧边栏主题选择 ---
+with st.sidebar:
+    st.header("选择你的故事主题")
+    selected_theme = st.selectbox(
+        "💡 主题：",
+        options=list(THEMES.keys()),
+        index=0 
+    )
+
+    current_config = THEMES[selected_theme]
+    
+    # 主题切换逻辑：重置聊天记录
+    if 'theme_config' not in st.session_state or st.session_state.theme_config['theme'] != selected_theme:
+        st.session_state.theme_config = current_config
+        st.session_state.messages = []
+        if selected_theme != "请选择一个主题":
+            st.session_state.messages.append({"role": "assistant", "content": current_config['starter']})
+            
+    st.markdown(f"**当前 AI 角色：** {st.session_state.theme_config['role']}")
+    st.markdown("---")
+    # 提醒用户 API 状态 (依赖于 Colab 运行)
+    st.info("后端 API 状态依赖 Colab 运行。")
+
+
+# -----------------------------------------------------------------
+# 聊天历史记录显示
+# -----------------------------------------------------------------
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+
+# -----------------------------------------------------------------
+# 用户输入处理
+# -----------------------------------------------------------------
+if prompt := st.chat_input("在这里输入你的故事细节..."):
+    current_theme = st.session_state.theme_config['theme']
+    
+    if current_theme == "请选择一个主题":
+        st.error("请先在左侧边栏选择一个故事主题！")
+        st.stop()
+        
+    # 1. 记录并显示用户输入
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # 2. 生成并显示 AI 的随机启发式回复
+    with st.chat_message("assistant"):
+        with st.spinner(f"{st.session_state.theme_config['role']} 正在为你斟酒..."):
+            time.sleep(1) 
+            
+            assistant_text = generate_mock_question(current_theme)
+            
+            st.markdown(assistant_text)
+            st.session_state.messages.append({"role": "assistant", "content": assistant_text})
+
+
+# -----------------------------------------------------------------
+# 脚本生成按钮 (调用核心 API)
+# -----------------------------------------------------------------
+if st.button("✨ 立即生成爆款短文"):
+    if len(st.session_state.messages) < 3:
+        st.warning("请至少进行两轮对话，确保故事细节足够丰富！")
+    elif st.session_state.theme_config['theme'] == "请选择一个主题":
+        st.warning("请先选择一个主题！")
+    else:
+        st.info("正在发送完整的聊天记录到云端后端，酿造最终爆款短文...")
+        
+        with st.spinner("⏳ 爆款短文/段子酿造中...这可能需要 10-20 秒。"):
+            
+            # 调用 Colab 后端 API
+            final_script_response = call_colab_api(st.session_state.messages)
+            
+            if final_script_response['success']:
+                st.balloons()
+                st.success("🎉 爆款短文成功出炉！")
+                st.markdown("---")
+                # 使用 language='markdown' 确保正确渲染
+                st.code(final_script_response['script'], language='markdown') 
+            else:
+                st.error(f"短文生成失败: {final_script_response['error']}")
+                st.info(f"详细信息: {final_script_response.get('details', '请确保 Colab 仍在运行！')}")
