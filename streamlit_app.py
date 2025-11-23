@@ -9,30 +9,18 @@ from streamlit_mic_recorder import mic_recorder # 导入语音组件
 # 核心配置：API URL
 # -----------------------------------------------------------------
 # 🚨 替换为您在 Colab 单元格 #3 中获得的实际公共 URL！
-# 示例: https://abc123xyz.try.colab.app
 COLAB_API_BASE_URL = "https://5000-m-s-kkb-use1d2-10pmp2v7ql8g5-d.us-east1-2.sandbox.colab.dev" 
 API_ENDPOINT = COLAB_API_BASE_URL + "/generate_script" 
 
+# -----------------------------------------------------------------
+# 核心对话配置 (简化为单一主题)
+# -----------------------------------------------------------------
+STARTER_PROMPT = "嗨，朋友！今天有啥可以唠唠的？是开心还是烦恼，先来聊个五块钱的！"
+AI_ROLE = "全能故事陪聊官"
+AI_ICON = "🍻"
 
 # -----------------------------------------------------------------
-# 核心数据结构：主题配置
-# -----------------------------------------------------------------
-THEMES = {
-    "请选择一个主题": {"role": "欢迎！", "starter": "请选择一个您想聊的故事主题。", "icon": "👋"},
-    "职场": {
-        "role": "资深职场陪酒师",
-        "starter": "今天想**吐槽**点啥？是领导又出奇葩招了，还是同事又把锅甩过来了？咱们得喝点儿，好好唠唠！",
-        "icon": "💼"
-    },
-    "生活": {
-        "role": "邻家故事酿造师",
-        "starter": "嘿，今天遇到啥**事儿**了，赶紧倒一杯！是开心到想转圈，还是难受到想找地儿躲？咱们得喝点儿聊聊！",
-        "icon": "☕"
-    }
-}
-
-# -----------------------------------------------------------------
-# 核心函数：调用 Colab 后端 API
+# 核心函数：调用 Colab 后端 API (保持不变)
 # -----------------------------------------------------------------
 def call_colab_api(chat_messages):
     """将聊天记录发送到 Colab 后端 API，并接收 JSON 响应。"""
@@ -48,38 +36,26 @@ def call_colab_api(chat_messages):
     
     try:
         headers = {'Content-Type': 'application/json'}
-        # 增加 timeout 到 60秒
         response = requests.post(API_ENDPOINT, json=payload, headers=headers, timeout=60) 
-        response.raise_for_status() # 检查 HTTP 错误 (4xx 或 5xx)
+        response.raise_for_status()
         return response.json()
     
     except requests.exceptions.RequestException as e:
         return {"success": False, "error": f"API 通信错误: {e}"}
 
 # -----------------------------------------------------------------
-# MOCK 函数：生成随机启发式问题
+# MOCK 函数：生成随机启发式问题 (通用版)
 # -----------------------------------------------------------------
-def generate_mock_question(theme):
-    """根据主题随机生成一个俏皮的启发式问题。"""
-    work_questions = [
-        "咱们吐槽得再具体一点！这件事里，最让你‘想翻白眼’的细节是什么？",
-        "听起来太糟了！有没有一瞬间，你真想拍桌子走人？是什么让你忍住了？",
-        "这事儿对你最大的影响是什么？换句话说，你学到了哪个血泪教训？",
-        "你觉得如果用一个表情包来形容你当时的心情，会是哪个？描述一下！"
+def generate_mock_question():
+    """随机生成一个通用且俏皮的启发式问题。"""
+    general_questions = [
+        "咱们再聊点细节！这件事里，最让你印象深刻的画面或感受是什么？",
+        "太有故事性了！有没有一个瞬间，你觉得是这件事的‘高光时刻’或‘最低谷’？",
+        "这事儿对你最大的启发是什么？换句话说，你现在对这件事有什么新的理解？",
+        "如果用三个关键词来总结你的心情，会是哪三个？",
+        "这完全可以拍成电影了！如果给这个故事起个副标题，会是什么？"
     ]
-    life_questions = [
-        "这事儿背后，最让你感到温暖或最让你感到遗憾的细节是什么？",
-        "这完全可以拍成电影了！如果给这个故事起个副标题，会是什么？",
-        "这事儿改变了你对某件事的看法吗？请告诉我，你现在‘醒悟’了什么？",
-        "说实话，当时你有想找人炫耀或倾诉吗？他们是怎么回复你的？"
-    ]
-    
-    if theme == "职场":
-        return random.choice(work_questions)
-    elif theme == "生活":
-        return random.choice(life_questions)
-    else:
-        return "继续讲，我很感兴趣！"
+    return random.choice(general_questions)
 
 
 # -----------------------------------------------------------------
@@ -89,77 +65,29 @@ st.set_page_config(page_title="故事酿造机", layout="centered")
 st.title("🎙️ 故事酿造机：你有故事，我有酒")
 st.caption("通过语音或文本输入，将经历转化为爆款短文/段子。")
 
+
 # -----------------------------------------------------------------
-# 核心初始化逻辑 (修复 KeyError 的关键)
+# 核心初始化逻辑 (最精简、最稳定版本)
 # -----------------------------------------------------------------
-# 1. 确保所有必要的会话状态键在应用开始时就存在
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
-# 2. 确保 theme_config 存在，并设置默认值
-if "theme_config" not in st.session_state:
-    # 默认初始化为 "请选择一个主题" 的配置
-    st.session_state.theme_config = THEMES["请选择一个主题"]
-
-# --- 侧边栏主题选择 ---
-with st.sidebar:
-    st.header("选择你的故事主题")
-    
-    # 使用 .get() 安全地获取当前主题的 key
-    current_theme_key = st.session_state.theme_config.get('theme', "请选择一个主题")
-    theme_options = list(THEMES.keys())
-    
-    # 查找当前主题的索引，以便 selectbox 保持正确的值
-    try:
-        default_index = theme_options.index(current_theme_key)
-    except ValueError:
-        default_index = 0 # 如果找不到，则默认为第一个选项
-        
-    selected_theme = st.selectbox(
-        "💡 主题：",
-        options=theme_options,
-        index=default_index
-    )
-
-# --- 主题切换逻辑 ---
-# 只有当用户通过 selectbox 切换了主题时才执行
-if st.session_state.theme_config.get('theme') != selected_theme:
-    current_config = THEMES[selected_theme]
-    
-    st.session_state.theme_config = current_config
-    st.session_state.messages = [] # 清空消息历史
-    
-    if selected_theme != "请选择一个主题":
-        # 记录 AI 的初始问题
-        st.session_state.messages.append({"role": "assistant", "content": current_config['starter']})
-
-# 将当前主题存入变量，供后续逻辑使用
-current_theme = st.session_state.theme_config['theme']
-
-# Display current AI role in the sidebar
-with st.sidebar:
-    st.markdown(f"**当前 AI 角色：** {st.session_state.theme_config['role']}")
-    st.markdown("---")
-    st.info("💡 记得保持 Colab Notebook 运行哦！")
-
+    # 首次加载时，添加 AI 的开场白
+    st.session_state.messages.append({"role": "assistant", "content": STARTER_PROMPT})
 
 # -----------------------------------------------------------------
 # 聊天历史记录显示
 # -----------------------------------------------------------------
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
+    # 使用 AI_ROLE 作为助手的名称，让界面更友好
+    role_name = AI_ROLE if message["role"] == "assistant" else "user"
+    with st.chat_message(role_name):
         st.markdown(message["content"])
+
 
 # -----------------------------------------------------------------
 # 用户输入处理：语音输入组件与文本输入
 # -----------------------------------------------------------------
-
-# 检查是否选择了主题，如果没有则禁用输入
-if current_theme == "请选择一个主题":
-    st.error("请先在左侧边栏选择一个故事主题！")
-    st.stop() 
-
-st.subheader(f"🎤 {st.session_state.theme_config['icon']} 讲出你的故事...")
+st.subheader(f"🎤 {AI_ICON} 讲出你的故事...")
 
 # 麦克风组件
 audio_info = mic_recorder(
@@ -176,12 +104,10 @@ prompt = None
 
 # 1. 处理语音输入
 if audio_info and 'text' in audio_info and audio_info['text']:
-    # 将语音转录结果存储到会话状态中，允许用户编辑
     st.session_state['transcribed_text'] = audio_info['text']
 
 # 2. 显示可编辑的转录文本和确认按钮
 if 'transcribed_text' in st.session_state and st.session_state['transcribed_text']:
-    # 使用文本区域显示转录结果
     st.session_state['transcribed_text'] = st.text_area(
         "🎙️ 你的故事 (可编辑，点击确认发送):", 
         value=st.session_state['transcribed_text'], 
@@ -189,11 +115,9 @@ if 'transcribed_text' in st.session_state and st.session_state['transcribed_text
     )
     if st.button("✅ 确认发送故事"):
         prompt = st.session_state['transcribed_text']
-        # 清除状态，防止重复发送
         st.session_state['transcribed_text'] = "" 
-    # 如果用户没有点击确认，则不发送 prompt
-
-# 3. 文本备用输入 (如果用户想手动输入，且没有等待确认的转录文本)
+    
+# 3. 文本备用输入
 if not prompt and 'transcribed_text' not in st.session_state:
     prompt = st.chat_input("或在这里输入故事文本...", key='text_fallback_input')
 
@@ -208,11 +132,11 @@ if prompt:
         st.markdown(prompt)
 
     # 2. 生成并显示 AI 的随机启发式回复
-    with st.chat_message("assistant"):
-        with st.spinner(f"{st.session_state.theme_config['role']} 正在为你斟酒..."):
+    with st.chat_message(AI_ROLE):
+        with st.spinner(f"{AI_ROLE} 正在为你斟酒..."):
             time.sleep(1) 
             
-            assistant_text = generate_mock_question(current_theme)
+            assistant_text = generate_mock_question()
             
             st.markdown(assistant_text)
             st.session_state.messages.append({"role": "assistant", "content": assistant_text})
@@ -224,8 +148,6 @@ if prompt:
 if st.button("✨ 立即生成爆款短文"):
     if len(st.session_state.messages) < 3:
         st.warning("请至少进行两轮对话，确保故事细节足够丰富！")
-    elif current_theme == "请选择一个主题":
-        st.warning("请先选择一个主题！")
     else:
         st.info("正在发送完整的聊天记录到云端后端，酿造最终爆款短文...")
         
