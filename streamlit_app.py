@@ -3,7 +3,7 @@ import requests
 import time
 import random
 import os
-from streamlit_mic_recorder import mic_recorder # 导入麦克风组件
+from streamlit_mic_recorder import mic_recorder # 导入语音组件
 
 # -----------------------------------------------------------------
 # 核心配置：API URL
@@ -48,7 +48,7 @@ def call_colab_api(chat_messages):
     
     try:
         headers = {'Content-Type': 'application/json'}
-        # 增加 timeout 到 60秒，因为 Gemini 模型的调用可能较慢
+        # 增加 timeout 到 60秒
         response = requests.post(API_ENDPOINT, json=payload, headers=headers, timeout=60) 
         response.raise_for_status() # 检查 HTTP 错误 (4xx 或 5xx)
         return response.json()
@@ -87,7 +87,13 @@ def generate_mock_question(theme):
 # -----------------------------------------------------------------
 st.set_page_config(page_title="故事酿造机", layout="centered")
 st.title("🎙️ 故事酿造机：你有故事，我有酒")
-st.caption("通过启发式聊天，将经历转化为爆款短文/段子。")
+st.caption("通过语音或文本输入，将经历转化为爆款短文/段子。")
+
+# -----------------------------------------------------------------
+# 核心初始化逻辑
+# -----------------------------------------------------------------
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
 # --- 侧边栏主题选择 ---
 with st.sidebar:
@@ -98,23 +104,23 @@ with st.sidebar:
         index=0 
     )
 
-    current_config = THEMES[selected_theme]
+# 获取当前配置
+current_config = THEMES[selected_theme]
 
-    # --- 主题切换逻辑：修复后的代码 ---
-    theme_changed = False
+# 检查和初始化会话状态 (修复 KeyError)
+if 'theme_config' not in st.session_state or st.session_state.theme_config.get('theme') != selected_theme:
+    st.session_state.theme_config = current_config
+    st.session_state.messages = [] # 清空消息历史
     
-    if ('theme_config' not in st.session_state or 
-        'theme' not in st.session_state.theme_config or 
-        st.session_state.theme_config['theme'] != selected_theme):
-        
-        theme_changed = True
+    if selected_theme != "请选择一个主题":
+        # 记录 AI 的初始问题
+        st.session_state.messages.append({"role": "assistant", "content": current_config['starter']})
+    
+# 将当前主题存入变量，供后续逻辑使用
+current_theme = st.session_state.theme_config['theme']
 
-    if theme_changed:
-        st.session_state.theme_config = current_config
-        st.session_state.messages = []
-        if selected_theme != "请选择一个主题":
-            st.session_state.messages.append({"role": "assistant", "content": current_config['starter']})
-            
+# Display current AI role in the sidebar
+with st.sidebar:
     st.markdown(f"**当前 AI 角色：** {st.session_state.theme_config['role']}")
     st.markdown("---")
     st.info("💡 记得保持 Colab Notebook 运行哦！")
@@ -123,21 +129,18 @@ with st.sidebar:
 # -----------------------------------------------------------------
 # 聊天历史记录显示
 # -----------------------------------------------------------------
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 # -----------------------------------------------------------------
-# 用户输入处理：语音输入组件
+# 用户输入处理：语音输入组件与文本输入
 # -----------------------------------------------------------------
-current_theme = st.session_state.theme_config['theme']
 
 # 检查是否选择了主题，如果没有则禁用输入
 if current_theme == "请选择一个主题":
     st.error("请先在左侧边栏选择一个故事主题！")
+    # 停止后续执行，直到用户选择主题
     st.stop() 
 
 st.subheader(f"🎤 {current_config['icon']} 讲出你的故事...")
@@ -162,6 +165,7 @@ if audio_info and 'text' in audio_info and audio_info['text']:
 
 # 2. 显示可编辑的转录文本和确认按钮
 if 'transcribed_text' in st.session_state and st.session_state['transcribed_text']:
+    # 使用文本区域显示转录结果
     st.session_state['transcribed_text'] = st.text_area(
         "🎙️ 你的故事 (可编辑，点击确认发送):", 
         value=st.session_state['transcribed_text'], 
@@ -171,9 +175,10 @@ if 'transcribed_text' in st.session_state and st.session_state['transcribed_text
         prompt = st.session_state['transcribed_text']
         # 清除状态，防止重复发送
         st.session_state['transcribed_text'] = "" 
+    # 如果用户没有点击确认，则不发送 prompt
 
-# 3. 文本备用输入 (如果用户想手动输入)
-if not prompt:
+# 3. 文本备用输入 (如果用户想手动输入，且没有等待确认的转录文本)
+if not prompt and 'transcribed_text' not in st.session_state:
     prompt = st.chat_input("或在这里输入故事文本...", key='text_fallback_input')
 
 
@@ -203,7 +208,7 @@ if prompt:
 if st.button("✨ 立即生成爆款短文"):
     if len(st.session_state.messages) < 3:
         st.warning("请至少进行两轮对话，确保故事细节足够丰富！")
-    elif st.session_state.theme_config['theme'] == "请选择一个主题":
+    elif current_theme == "请选择一个主题":
         st.warning("请先选择一个主题！")
     else:
         st.info("正在发送完整的聊天记录到云端后端，酿造最终爆款短文...")
@@ -217,6 +222,7 @@ if st.button("✨ 立即生成爆款短文"):
                 st.balloons()
                 st.success("🎉 爆款短文成功出炉！")
                 st.markdown("---")
+                # 使用 language='markdown' 确保正确渲染
                 st.code(final_script_response['script'], language='markdown') 
             else:
                 st.error(f"短文生成失败: {final_script_response['error']}")
