@@ -92,33 +92,38 @@ st.caption("通过语音或文本输入，将经历转化为爆款短文/段子�
 # -----------------------------------------------------------------
 # 核心初始化逻辑 (修复 KeyError 的关键)
 # -----------------------------------------------------------------
-# 确保所有必要的会话状态键在应用开始时就存在
+# 1. 确保所有必要的会话状态键在应用开始时就存在
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# 2. 确保 theme_config 存在，并设置默认值
 if "theme_config" not in st.session_state:
     # 默认初始化为 "请选择一个主题" 的配置
     st.session_state.theme_config = THEMES["请选择一个主题"]
-
 
 # --- 侧边栏主题选择 ---
 with st.sidebar:
     st.header("选择你的故事主题")
     
-    # 获取当前主题的索引，用于在 selectbox 中设置默认值
-    current_theme_key = st.session_state.theme_config['theme']
+    # 使用 .get() 安全地获取当前主题的 key
+    current_theme_key = st.session_state.theme_config.get('theme', "请选择一个主题")
     theme_options = list(THEMES.keys())
     
+    # 查找当前主题的索引，以便 selectbox 保持正确的值
+    try:
+        default_index = theme_options.index(current_theme_key)
+    except ValueError:
+        default_index = 0 # 如果找不到，则默认为第一个选项
+        
     selected_theme = st.selectbox(
         "💡 主题：",
         options=theme_options,
-        index=theme_options.index(current_theme_key) # 设置当前主题为默认值
+        index=default_index
     )
-
 
 # --- 主题切换逻辑 ---
 # 只有当用户通过 selectbox 切换了主题时才执行
-if st.session_state.theme_config['theme'] != selected_theme:
+if st.session_state.theme_config.get('theme') != selected_theme:
     current_config = THEMES[selected_theme]
     
     st.session_state.theme_config = current_config
@@ -130,7 +135,6 @@ if st.session_state.theme_config['theme'] != selected_theme:
 
 # 将当前主题存入变量，供后续逻辑使用
 current_theme = st.session_state.theme_config['theme']
-
 
 # Display current AI role in the sidebar
 with st.sidebar:
