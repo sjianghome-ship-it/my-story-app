@@ -90,34 +90,47 @@ st.title("🎙️ 故事酿造机：你有故事，我有酒")
 st.caption("通过语音或文本输入，将经历转化为爆款短文/段子。")
 
 # -----------------------------------------------------------------
-# 核心初始化逻辑
+# 核心初始化逻辑 (修复 KeyError 的关键)
 # -----------------------------------------------------------------
+# 确保所有必要的会话状态键在应用开始时就存在
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+if "theme_config" not in st.session_state:
+    # 默认初始化为 "请选择一个主题" 的配置
+    st.session_state.theme_config = THEMES["请选择一个主题"]
+
 
 # --- 侧边栏主题选择 ---
 with st.sidebar:
     st.header("选择你的故事主题")
+    
+    # 获取当前主题的索引，用于在 selectbox 中设置默认值
+    current_theme_key = st.session_state.theme_config['theme']
+    theme_options = list(THEMES.keys())
+    
     selected_theme = st.selectbox(
         "💡 主题：",
-        options=list(THEMES.keys()),
-        index=0 
+        options=theme_options,
+        index=theme_options.index(current_theme_key) # 设置当前主题为默认值
     )
 
-# 获取当前配置
-current_config = THEMES[selected_theme]
 
-# 检查和初始化会话状态 (修复 KeyError)
-if 'theme_config' not in st.session_state or st.session_state.theme_config.get('theme') != selected_theme:
+# --- 主题切换逻辑 ---
+# 只有当用户通过 selectbox 切换了主题时才执行
+if st.session_state.theme_config['theme'] != selected_theme:
+    current_config = THEMES[selected_theme]
+    
     st.session_state.theme_config = current_config
     st.session_state.messages = [] # 清空消息历史
     
     if selected_theme != "请选择一个主题":
         # 记录 AI 的初始问题
         st.session_state.messages.append({"role": "assistant", "content": current_config['starter']})
-    
+
 # 将当前主题存入变量，供后续逻辑使用
 current_theme = st.session_state.theme_config['theme']
+
 
 # Display current AI role in the sidebar
 with st.sidebar:
@@ -140,10 +153,9 @@ for message in st.session_state.messages:
 # 检查是否选择了主题，如果没有则禁用输入
 if current_theme == "请选择一个主题":
     st.error("请先在左侧边栏选择一个故事主题！")
-    # 停止后续执行，直到用户选择主题
     st.stop() 
 
-st.subheader(f"🎤 {current_config['icon']} 讲出你的故事...")
+st.subheader(f"🎤 {st.session_state.theme_config['icon']} 讲出你的故事...")
 
 # 麦克风组件
 audio_info = mic_recorder(
@@ -222,7 +234,6 @@ if st.button("✨ 立即生成爆款短文"):
                 st.balloons()
                 st.success("🎉 爆款短文成功出炉！")
                 st.markdown("---")
-                # 使用 language='markdown' 确保正确渲染
                 st.code(final_script_response['script'], language='markdown') 
             else:
                 st.error(f"短文生成失败: {final_script_response['error']}")
