@@ -3,6 +3,7 @@ import requests
 import time
 import random
 import os
+from streamlit_mic_recorder import mic_recorder # 导入麦克风组件
 
 # -----------------------------------------------------------------
 # 核心配置：API URL
@@ -14,7 +15,7 @@ API_ENDPOINT = COLAB_API_BASE_URL + "/generate_script"
 
 
 # -----------------------------------------------------------------
-# 核心数据结构：主题配置 (精简版，带俏皮开场)
+# 核心数据结构：主题配置
 # -----------------------------------------------------------------
 THEMES = {
     "请选择一个主题": {"role": "欢迎！", "starter": "请选择一个您想聊的故事主题。", "icon": "👋"},
@@ -46,8 +47,8 @@ def call_colab_api(chat_messages):
     }
     
     try:
-        # 设置 CORS 头部以便 Streamlit Cloud 访问
         headers = {'Content-Type': 'application/json'}
+        # 增加 timeout 到 60秒，因为 Gemini 模型的调用可能较慢
         response = requests.post(API_ENDPOINT, json=payload, headers=headers, timeout=60) 
         response.raise_for_status() # 检查 HTTP 错误 (4xx 或 5xx)
         return response.json()
@@ -98,9 +99,17 @@ with st.sidebar:
     )
 
     current_config = THEMES[selected_theme]
+
+    # --- 主题切换逻辑：修复后的代码 ---
+    theme_changed = False
     
-    # 主题切换逻辑：重置聊天记录
-    if 'theme_config' not in st.session_state or st.session_state.theme_config['theme'] != selected_theme:
+    if ('theme_config' not in st.session_state or 
+        'theme' not in st.session_state.theme_config or 
+        st.session_state.theme_config['theme'] != selected_theme):
+        
+        theme_changed = True
+
+    if theme_changed:
         st.session_state.theme_config = current_config
         st.session_state.messages = []
         if selected_theme != "请选择一个主题":
@@ -108,8 +117,7 @@ with st.sidebar:
             
     st.markdown(f"**当前 AI 角色：** {st.session_state.theme_config['role']}")
     st.markdown("---")
-    # 提醒用户 API 状态 (依赖于 Colab 运行)
-    st.info("后端 API 状态依赖 Colab 运行。")
+    st.info("💡 记得保持 Colab Notebook 运行哦！")
 
 
 # -----------------------------------------------------------------
@@ -122,17 +130,57 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# -----------------------------------------------------------------
+# 用户输入处理：语音输入组件
+# -----------------------------------------------------------------
+current_theme = st.session_state.theme_config['theme']
+
+# 检查是否选择了主题，如果没有则禁用输入
+if current_theme == "请选择一个主题":
+    st.error("请先在左侧边栏选择一个故事主题！")
+    st.stop() 
+
+st.subheader(f"🎤 {current_config['icon']} 讲出你的故事...")
+
+# 麦克风组件
+audio_info = mic_recorder(
+    start_prompt="点击开始录音",
+    stop_prompt="点击停止，AI 正在转录...",
+    key='mic_input',
+    just_once=True,
+    use_container_width=True,
+    format="webm"
+)
+
+# 初始化 prompt 变量
+prompt = None
+
+# 1. 处理语音输入
+if audio_info and 'text' in audio_info and audio_info['text']:
+    # 将语音转录结果存储到会话状态中，允许用户编辑
+    st.session_state['transcribed_text'] = audio_info['text']
+
+# 2. 显示可编辑的转录文本和确认按钮
+if 'transcribed_text' in st.session_state and st.session_state['transcribed_text']:
+    st.session_state['transcribed_text'] = st.text_area(
+        "🎙️ 你的故事 (可编辑，点击确认发送):", 
+        value=st.session_state['transcribed_text'], 
+        key='current_story_input_area'
+    )
+    if st.button("✅ 确认发送故事"):
+        prompt = st.session_state['transcribed_text']
+        # 清除状态，防止重复发送
+        st.session_state['transcribed_text'] = "" 
+
+# 3. 文本备用输入 (如果用户想手动输入)
+if not prompt:
+    prompt = st.chat_input("或在这里输入故事文本...", key='text_fallback_input')
+
 
 # -----------------------------------------------------------------
-# 用户输入处理
+# 主逻辑处理 (用户点击确认或文本回车后触发)
 # -----------------------------------------------------------------
-if prompt := st.chat_input("在这里输入你的故事细节..."):
-    current_theme = st.session_state.theme_config['theme']
-    
-    if current_theme == "请选择一个主题":
-        st.error("请先在左侧边栏选择一个故事主题！")
-        st.stop()
-        
+if prompt:
     # 1. 记录并显示用户输入
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -169,8 +217,7 @@ if st.button("✨ 立即生成爆款短文"):
                 st.balloons()
                 st.success("🎉 爆款短文成功出炉！")
                 st.markdown("---")
-                # 使用 language='markdown' 确保正确渲染
                 st.code(final_script_response['script'], language='markdown') 
             else:
                 st.error(f"短文生成失败: {final_script_response['error']}")
-                st.info(f"详细信息: {final_script_response.get('details', '请确保 Colab 仍在运行！')}")
+                st.info(f"详细信息: {final_script_response.get('details', '请确保 Colab 仍在运行，且 API URL 设置正确！')}")
