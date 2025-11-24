@@ -9,23 +9,26 @@ from streamlit_mic_recorder import mic_recorder # 导入语音组件
 # 核心配置：API URL
 # -----------------------------------------------------------------
 # 🚨 替换为您在 Colab 单元格 #3 中获得的实际公共 URL！
-# 示例: https://abc123xyz.try.colab.app
-COLAB_API_BASE_URL = "https://5000-m-s-kkb-use1d2-10pmp2v7ql8g5-d.us-east1-2.sandbox.colab.dev" 
-API_ENDPOINT = COLAB_API_BASE_URL + "/generate_script" 
-
+COLAB_API_BASE_URL = "YOUR_COLAB_PUBLIC_URL_HERE" 
+API_ENDPOINT_SCRIPT = COLAB_API_BASE_URL + "/generate_script"       # 终点：生成短文
+API_ENDPOINT_QUESTION = COLAB_API_BASE_URL + "/get_next_question"   # 终点：生成问题
 
 # -----------------------------------------------------------------
-# 核心对话配置 (简化为单一主题)
+# 核心对话配置 (简化为无主题模式)
 # -----------------------------------------------------------------
 STARTER_PROMPT = "嗨，朋友！今天有啥可以唠唠的？是开心还是烦恼，先来聊个五块钱的！"
 AI_ROLE = "全能故事陪聊官"
 AI_ICON = "🍻"
 
+
 # -----------------------------------------------------------------
-# 核心函数：调用 Colab 后端 API
+# 核心函数：调用 Colab 后端 API (通用化)
 # -----------------------------------------------------------------
-def call_colab_api(chat_messages):
-    """将聊天记录发送到 Colab 后端 API，并接收 JSON 响应。"""
+def call_colab_api(chat_messages, endpoint_url):
+    """
+    将聊天记录发送到 Colab 后端 API，并接收 JSON 响应。
+    endpoint_url: 可以是 API_ENDPOINT_SCRIPT 或 API_ENDPOINT_QUESTION
+    """
     
     # 格式化聊天记录为后端需要的列表 ["角色: 内容", ...]
     formatted_history = [f"{msg['role']}: {msg['content']}" 
@@ -38,27 +41,12 @@ def call_colab_api(chat_messages):
     
     try:
         headers = {'Content-Type': 'application/json'}
-        # 增加 timeout 到 60秒
-        response = requests.post(API_ENDPOINT, json=payload, headers=headers, timeout=60) 
+        response = requests.post(endpoint_url, json=payload, headers=headers, timeout=60) 
         response.raise_for_status() # 检查 HTTP 错误 (4xx 或 5xx)
         return response.json()
     
     except requests.exceptions.RequestException as e:
         return {"success": False, "error": f"API 通信错误: {e}"}
-
-# -----------------------------------------------------------------
-# MOCK 函数：生成随机启发式问题 (通用版)
-# -----------------------------------------------------------------
-def generate_mock_question():
-    """随机生成一个通用且俏皮的启发式问题。"""
-    general_questions = [
-        "咱们再聊点细节！这件事里，最让你印象深刻的画面或感受是什么？",
-        "太有故事性了！有没有一个瞬间，你觉得是这件事的‘高光时刻’或‘最低谷’？",
-        "这事儿对你最大的启发是什么？换句话说，你现在对这件事有什么新的理解？",
-        "如果用三个关键词来总结你的心情，会是哪三个？",
-        "这完全可以拍成电影了！如果给这个故事起个副标题，会是什么？"
-    ]
-    return random.choice(general_questions)
 
 
 # -----------------------------------------------------------------
@@ -113,7 +101,7 @@ if audio_info:
     elif 'audio_data' in audio_info and audio_info['audio_data']:
         # 录音成功，但转录失败
         st.session_state['transcribed_text'] = "⚠️ 语音转录失败，请手动编辑或输入文本。"
-        st.warning("⚠️ 语音转录失败，可能是网络或浏览器原因。请检查麦克风。")
+        st.warning("⚠️ 语音转录失败，请手动编辑或检查浏览器权限/网络。")
 
 # 2. 显示可编辑的转录文本和确认按钮
 if 'transcribed_text' in st.session_state and st.session_state['transcribed_text']:
@@ -141,16 +129,26 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # 2. 生成并显示 AI 的随机启发式回复
+    # 2. 调用 Colab 后端 API 获取下一个问题 (实时调用！)
     with st.chat_message(AI_ROLE):
-        with st.spinner(f"{AI_ROLE} 正在为你斟酒..."):
-            time.sleep(1) 
+        with st.spinner(f"{AI_ROLE} 正在为你斟酒，并思考下一个问题..."):
             
-            # 使用通用启发式问题
-            assistant_text = generate_mock_question()
+            # --- 调用新的 API 端点: /get_next_question ---
+            question_response = call_colab_api(st.session_state.messages, 
+                                               endpoint_url=API_ENDPOINT_QUESTION)
             
-            st.markdown(assistant_text)
-            st.session_state.messages.append({"role": "assistant", "content": assistant_text})
+            if question_response['success']:
+                # 确保模型返回的是纯文本，不是Markdown或其他格式
+                assistant_text = question_response.get('next_question', '请多说一些细节。')
+                st.markdown(assistant_text)
+                st.session_state.messages.append({"role": "assistant", "content": assistant_text})
+                
+            else:
+                st.error(f"AI 问答失败: {question_response['error']}")
+                # 备用 MOCK 回复，防止 API 失败导致流程中断
+                backup_mock = "嗯，听起来很有意思！不过咱们再深入一点，这件事的转折点是什么？（系统 API 暂时故障，请稍后再试或继续打字）"
+                st.markdown(backup_mock)
+                st.session_state.messages.append({"role": "assistant", "content": backup_mock})
 
 
 # -----------------------------------------------------------------
@@ -164,8 +162,9 @@ if st.button("✨ 立即生成爆款短文"):
         
         with st.spinner("⏳ 爆款短文/段子酿造中...这可能需要 10-20 秒。"):
             
-            # 调用 Colab 后端 API
-            final_script_response = call_colab_api(st.session_state.messages)
+            # --- 调用最终生成 API 端点: /generate_script ---
+            final_script_response = call_colab_api(st.session_state.messages, 
+                                                  endpoint_url=API_ENDPOINT_SCRIPT)
             
             if final_script_response['success']:
                 st.balloons()
