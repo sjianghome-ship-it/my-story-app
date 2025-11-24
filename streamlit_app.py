@@ -9,7 +9,7 @@ from streamlit_mic_recorder import mic_recorder
 # 核心配置：API URL
 # -----------------------------------------------------------------
 # 🚨 替换为您在 Colab 单元格 #2 中获得的最新公共 URL！
-COLAB_API_BASE_URL = "https://5000-m-s-kkb-usw1c2-3dcc5boyzpvrl-c.us-west1-2.sandbox.colab.dev/" 
+COLAB_API_BASE_URL = "https://5000-m-s-kkb-usw1c2-3dcc5boyzpvrl-c.us-west1-2.sandbox.colab.dev" 
 # 注意：API_ENDPOINT_SCRIPT 和 API_ENDPOINT_QUESTION 将在函数内动态拼接
 
 # -----------------------------------------------------------------
@@ -21,7 +21,7 @@ AI_ICON = "🍻"
 
 
 # -----------------------------------------------------------------
-# 核心函数：调用 Colab 后端 API (最终修复 URL 拼接)
+# 核心函数：调用 Colab 后端 API (最终诊断版)
 # -----------------------------------------------------------------
 def call_colab_api(chat_messages, endpoint_suffix): 
     """
@@ -39,9 +39,12 @@ def call_colab_api(chat_messages, endpoint_suffix):
     }
     
     try:
-        # --- 关键修复：规范化基础 URL ---
+        # --- 关键修复和诊断：规范化 URL ---
         base_url = COLAB_API_BASE_URL.rstrip('/') # 移除基础URL末尾的斜杠
         full_url = base_url + endpoint_suffix # 正确拼接 URL
+        
+        # 打印出 Streamlit 正在使用的完整 URL (用于诊断)
+        st.sidebar.warning(f"正在尝试连接: {full_url}") 
         
         headers = {'Content-Type': 'application/json'}
         response = requests.post(full_url, json=payload, headers=headers, timeout=60) 
@@ -52,8 +55,10 @@ def call_colab_api(chat_messages, endpoint_suffix):
         return {"success": False, "error": f"API 通信错误: {e}"}
 
 # -----------------------------------------------------------------
-# MOCK 函数：生成随机启发式问题 (通用版)
+# ... (其余代码不变，包括 MOCK 函数、UI 配置、聊天记录显示)
 # -----------------------------------------------------------------
+# ... (从 MOCK 函数：生成随机启发式问题 开始的代码，保持不变) ...
+
 def generate_mock_question():
     """随机生成一个通用且俏皮的启发式问题。"""
     general_questions = [
@@ -87,7 +92,6 @@ for message in st.session_state.messages:
     role_name = AI_ROLE if message["role"] == "assistant" else "user"
     with st.chat_message(role_name):
         st.markdown(message["content"])
-
 
 # -----------------------------------------------------------------
 # 用户输入处理：语音输入组件与文本输入 (增强错误处理)
