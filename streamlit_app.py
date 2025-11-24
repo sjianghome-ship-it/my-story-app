@@ -9,7 +9,7 @@ from streamlit_mic_recorder import mic_recorder # 导入语音组件
 # 核心配置：API URL
 # -----------------------------------------------------------------
 # 🚨 替换为您在 Colab 单元格 #3 中获得的实际公共 URL！
-COLAB_API_BASE_URL = "https://5000-m-s-kkb-usw1c1-pe4saz03lpt7-c.us-west1-1.sandbox.colab.dev" 
+COLAB_API_BASE_URL = "https://5000-m-s-kkb-use1d2-3ng3rxvnqfn99-d.us-east1-2.sandbox.colab.dev" 
 API_ENDPOINT_SCRIPT = COLAB_API_BASE_URL + "/generate_script"       # 终点：生成短文
 API_ENDPOINT_QUESTION = COLAB_API_BASE_URL + "/get_next_question"   # 终点：生成问题
 
